@@ -11,5 +11,5 @@ find_library(LBER_LIBRARIES NAMES lber)
 file(GLOB SOURCES "src/*.cpp")
 
 add_executable(VolvulusTwist ${SOURCES})
-target_link_libraries(VolvulusTwist ${LDAP_LIBRARIES})
-target_include_directories(VolvulusTwist PRIVATE ${LDAP_INCLUDE_DIRS})
+target_link_libraries(VolvulusTwist ${OPENLDAP_LIBRARIES})
+target_include_directories(VolvulusTwist PRIVATE ${LDAP_INCLUDE_DIRS} include)

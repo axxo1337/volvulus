@@ -86,4 +86,26 @@ namespace Arguments
 
         return false;
     }
+
+    template <typename T>
+    std::optional<T> getValue(const Map &arguments, const std::string &key)
+    {
+        auto it = arguments.find(key);
+        if (it == arguments.end())
+            return std::nullopt;
+
+        const Argument &arg = it->second;
+        if (!arg.value.has_value())
+            return std::nullopt;
+
+        try
+        {
+            return std::get<T>(*arg.value);
+        }
+        catch (const std::bad_variant_access &)
+        {
+            std::cerr << "[x] Type mismatch for argument \"" << key << "\"" << std::endl;
+            return std::nullopt;
+        }
+    }
 }
