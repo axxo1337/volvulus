@@ -4,6 +4,11 @@
 #include <ldap.h>
 
 #include "arguments.h"
+#include "object-search.h"
+
+ObjectSearch::Map objectSearchMap = {
+    {"USERS",
+     {"user", {{"sAMAccountName", ObjectSearch::AttributeType::STRING}}}}};
 
 int main(int argc, char **argv)
 {
@@ -80,7 +85,7 @@ int main(int argc, char **argv)
 
     LDAPMessage *search_result;
     const char *filter{"(objectClass=user)"};
-    const char *attributes[]{"sAMAccountName", "displayName", nullptr};
+    const char *attributes[]{"sAMAccountName", "displayName", "objectSid", nullptr};
     int search_result_code{ldap_search_s(p_ldap, base_dn.c_str(), LDAP_SCOPE_SUBTREE, filter, (char **)attributes, 0, &search_result)};
 
     if (search_result_code != LDAP_SUCCESS)
@@ -90,28 +95,6 @@ int main(int argc, char **argv)
     }
 
     int entry_count = ldap_count_entries(p_ldap, search_result);
-    std::cout << "[+] Found " << entry_count << " user(s):" << std::endl;
-    std::cout << std::string(50, '-') << std::endl;
-
-    LDAPMessage *entry{ldap_first_entry(p_ldap, search_result)};
-
-    while (entry != nullptr)
-    {
-        berval **sam_values{ldap_get_values_len(p_ldap, entry, "sAMAccountName")};
-        berval **display_values{ldap_get_values_len(p_ldap, entry, "displayName")};
-
-        std::string sam_account{(sam_values && sam_values[0]) ? sam_values[0]->bv_val : "N/A"};
-        std::string display_name{(display_values && display_values[0]) ? display_values[0]->bv_val : "N/A"};
-
-        std::cout << "- " << sam_account << " (" << display_name << ")" << std::endl;
-
-        if (sam_values)
-            ldap_value_free_len(sam_values);
-        if (display_values)
-            ldap_value_free_len(display_values);
-
-        entry = ldap_next_entry(p_ldap, entry);
-    }
 
     ldap_msgfree(search_result);
 
