@@ -87,10 +87,11 @@ int main(int argc, char **argv)
     {
         LDAPMessage *search_result;
         std::string filter{"(objectClass=" + std::string(entry.second.objectClass) + ")"};
-        std::vector<const char *> attributes(entry.second.attributes.size());
 
-        for (auto &attribute : entry.second.attributes)
+        std::vector<const char *> attributes;
+        for (const auto &attribute : entry.second.attributes)
             attributes.push_back(attribute.name);
+        attributes.push_back(nullptr);
 
         int search_result_code{ldap_search_s(p_ldap, base_dn.c_str(), LDAP_SCOPE_SUBTREE, filter.c_str(), (char **)attributes.data(), 0, &search_result)};
 
@@ -104,6 +105,42 @@ int main(int argc, char **argv)
 
         while (message_entry != nullptr)
         {
+            for (const auto &attribute : entry.second.attributes)
+            {
+                berval **values{ldap_get_values_len(p_ldap, message_entry, attribute.name)};
+
+                if (values == nullptr)
+                    continue;
+
+                switch (attribute.type)
+                {
+                case ObjectSearch::AttributeType::STRING:
+                    if (values[0] != nullptr)
+                        std::cout << attribute.name << ": " << values[0]->bv_val << std::endl;
+                    break;
+                case ObjectSearch::AttributeType::MULTI_VALUE:
+                    for (int i = 0; values[i] != nullptr; i++)
+                        std::cout << attribute.name << "[" << i << "]: " << values[i]->bv_val << std::endl;
+                    break;
+                case ObjectSearch::AttributeType::FILETIME:
+                    if (values[0] != nullptr)
+                    {
+                        std::string readable_time = ObjectSearch::parseFiletime(values[0]);
+                        std::cout << attribute.name << ": " << readable_time << std::endl;
+                    }
+                    break;
+                case ObjectSearch::AttributeType::BINARY_SID:
+                    if (values[0] != nullptr)
+                    {
+                        std::string readable_sid = ObjectSearch::parseSid(values[0]);
+                        std::cout << attribute.name << ": " << readable_sid << std::endl;
+                    }
+                    break;
+                }
+
+                ldap_value_free_len(values);
+            }
+
             message_entry = ldap_next_entry(p_ldap, message_entry);
         }
 
