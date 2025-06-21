@@ -6,10 +6,6 @@
 #include "arguments.h"
 #include "object-search.h"
 
-ObjectSearch::Map objectSearchMap = {
-    {"USERS",
-     {"user", {{"sAMAccountName", ObjectSearch::AttributeType::STRING}, {"displayName", ObjectSearch::AttributeType::STRING}, {"objectSid", ObjectSearch::AttributeType::BINARY_SID}, {"lastLogon", ObjectSearch::AttributeType::FILETIME}, {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE}}}}};
-
 int main(int argc, char **argv)
 {
     Arguments::Map arguments = {
@@ -83,6 +79,10 @@ int main(int argc, char **argv)
 
     std::string base_dn("DC=" + domain_short + ",DC=" + domain_ext);
 
+    ObjectSearch::Map objectSearchMap = {
+        {"USERS",
+         {"user", {{"sAMAccountName", ObjectSearch::AttributeType::STRING}, {"displayName", ObjectSearch::AttributeType::STRING}, {"objectSid", ObjectSearch::AttributeType::BINARY_SID}, {"lastLogon", ObjectSearch::AttributeType::FILETIME}, {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE}}}}};
+
     for (auto &entry : objectSearchMap)
     {
         LDAPMessage *search_result;
@@ -100,24 +100,15 @@ int main(int argc, char **argv)
             return -1;
         }
 
+        LDAPMessage *message_entry{ldap_first_entry(p_ldap, search_result)};
+
+        while (message_entry != nullptr)
+        {
+            message_entry = ldap_next_entry(p_ldap, message_entry);
+        }
+
         ldap_msgfree(search_result);
     }
-
-    /*
-    LDAPMessage *search_result;
-    const char *filter{"(objectClass=user)"};
-    const char *attributes[]{"sAMAccountName", "displayName", "objectSid", nullptr};
-    int search_result_code{ldap_search_s(p_ldap, base_dn.c_str(), LDAP_SCOPE_SUBTREE, filter, (char **)attributes, 0, &search_result)};
-
-    if (search_result_code != LDAP_SUCCESS)
-    {
-        std::cerr << "[x] Search failed: " << ldap_err2string(search_result_code) << std::endl;
-        return -1;
-    }
-
-    int entry_count = ldap_count_entries(p_ldap, search_result);
-
-    ldap_msgfree(search_result);*/
 
     ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
     return 0;
