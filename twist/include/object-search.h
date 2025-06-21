@@ -13,6 +13,9 @@ namespace ObjectSearch
     enum class AttributeType
     {
         STRING,
+        BINARY_SID,
+        FILETIME,
+        MULTI_VALUE
     };
 
     struct Attribute

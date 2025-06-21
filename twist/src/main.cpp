@@ -8,7 +8,7 @@
 
 ObjectSearch::Map objectSearchMap = {
     {"USERS",
-     {"user", {{"sAMAccountName", ObjectSearch::AttributeType::STRING}}}}};
+     {"user", {{"sAMAccountName", ObjectSearch::AttributeType::STRING}, {"displayName", ObjectSearch::AttributeType::STRING}, {"objectSid", ObjectSearch::AttributeType::BINARY_SID}, {"lastLogon", ObjectSearch::AttributeType::FILETIME}, {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE}}}}};
 
 int main(int argc, char **argv)
 {
@@ -83,6 +83,27 @@ int main(int argc, char **argv)
 
     std::string base_dn("DC=" + domain_short + ",DC=" + domain_ext);
 
+    for (auto &entry : objectSearchMap)
+    {
+        LDAPMessage *search_result;
+        std::string filter{"(objectClass=" + std::string(entry.second.objectClass) + ")"};
+        std::vector<const char *> attributes(entry.second.attributes.size());
+
+        for (auto &attribute : entry.second.attributes)
+            attributes.push_back(attribute.name);
+
+        int search_result_code{ldap_search_s(p_ldap, base_dn.c_str(), LDAP_SCOPE_SUBTREE, filter.c_str(), (char **)attributes.data(), 0, &search_result)};
+
+        if (search_result_code != LDAP_SUCCESS)
+        {
+            std::cerr << "[x] Search failed for \"" << entry.first << "\": " << ldap_err2string(search_result_code) << std::endl;
+            return -1;
+        }
+
+        ldap_msgfree(search_result);
+    }
+
+    /*
     LDAPMessage *search_result;
     const char *filter{"(objectClass=user)"};
     const char *attributes[]{"sAMAccountName", "displayName", "objectSid", nullptr};
@@ -96,7 +117,7 @@ int main(int argc, char **argv)
 
     int entry_count = ldap_count_entries(p_ldap, search_result);
 
-    ldap_msgfree(search_result);
+    ldap_msgfree(search_result);*/
 
     ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
     return 0;
