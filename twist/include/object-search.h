@@ -21,7 +21,8 @@ namespace ObjectSearch
         STRING,
         BINARY_SID,
         FILETIME,
-        MULTI_VALUE
+        MULTI_VALUE,
+        ENUMERATION
     };
 
     struct Attribute

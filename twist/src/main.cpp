@@ -1,10 +1,43 @@
 #include <iostream>
 #include <string>
+#include <sstream>
+#include <vector>
 
 #include <ldap.h>
 
 #include "arguments.h"
 #include "object-search.h"
+
+// Helper function to escape JSON strings
+std::string escapeJson(const std::string &input)
+{
+    std::string output;
+    for (char c : input)
+    {
+        switch (c)
+        {
+        case '"':
+            output += "\\\"";
+            break;
+        case '\\':
+            output += "\\\\";
+            break;
+        case '\n':
+            output += "\\n";
+            break;
+        case '\r':
+            output += "\\r";
+            break;
+        case '\t':
+            output += "\\t";
+            break;
+        default:
+            output += c;
+            break;
+        }
+    }
+    return output;
+}
 
 int main(int argc, char **argv)
 {
@@ -81,12 +114,23 @@ int main(int argc, char **argv)
 
     ObjectSearch::Map objectSearchMap = {
         {"USERS",
-         {"user", {{"sAMAccountName", ObjectSearch::AttributeType::STRING}, {"displayName", ObjectSearch::AttributeType::STRING}, {"objectSid", ObjectSearch::AttributeType::BINARY_SID}, {"lastLogon", ObjectSearch::AttributeType::FILETIME}, {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE}}}}};
+         {"user", {{"sAMAccountName", ObjectSearch::AttributeType::STRING}, {"displayName", ObjectSearch::AttributeType::STRING}, {"objectSid", ObjectSearch::AttributeType::BINARY_SID}, {"lastLogon", ObjectSearch::AttributeType::FILETIME}, {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE}, {"rid", ObjectSearch::AttributeType::ENUMERATION}}}}};
 
+    std::ostringstream oss;
+    oss << "{\n";
+
+    bool first_search_type = true;
     for (auto &entry : objectSearchMap)
     {
+        if (!first_search_type)
+        {
+            oss << ",\n";
+        }
+
         LDAPMessage *search_result;
         std::string filter{"(objectClass=" + std::string(entry.second.objectClass) + ")"};
+
+        oss << "  \"" << entry.first << "\": [\n";
 
         std::vector<const char *> attributes;
         for (const auto &attribute : entry.second.attributes)
@@ -103,8 +147,15 @@ int main(int argc, char **argv)
 
         LDAPMessage *message_entry{ldap_first_entry(p_ldap, search_result)};
 
+        bool first_entry{true};
         while (message_entry != nullptr)
         {
+            if (!first_entry)
+                oss << ",\n";
+
+            oss << "    {\n";
+
+            bool first_attribute = true;
             for (const auto &attribute : entry.second.attributes)
             {
                 berval **values{ldap_get_values_len(p_ldap, message_entry, attribute.name)};
@@ -112,40 +163,76 @@ int main(int argc, char **argv)
                 if (values == nullptr)
                     continue;
 
+                if (!first_attribute)
+                {
+                    oss << ",\n";
+                }
+
+                oss << "      \"" << attribute.name << "\": ";
+
                 switch (attribute.type)
                 {
                 case ObjectSearch::AttributeType::STRING:
                     if (values[0] != nullptr)
-                        std::cout << attribute.name << ": " << values[0]->bv_val << std::endl;
+                        oss << "\"" << escapeJson(values[0]->bv_val) << "\"";
+                    else
+                        oss << "null";
                     break;
+
                 case ObjectSearch::AttributeType::MULTI_VALUE:
+                    oss << "[\n";
                     for (int i = 0; values[i] != nullptr; i++)
-                        std::cout << attribute.name << "[" << i << "]: " << values[i]->bv_val << std::endl;
+                    {
+                        if (i > 0)
+                            oss << ",\n";
+                        oss << "        \"" << escapeJson(values[i]->bv_val) << "\"";
+                    }
+                    oss << "\n      ]";
                     break;
+
                 case ObjectSearch::AttributeType::FILETIME:
                     if (values[0] != nullptr)
-                    {
-                        std::string readable_time = ObjectSearch::parseFiletime(values[0]);
-                        std::cout << attribute.name << ": " << readable_time << std::endl;
-                    }
+                        oss << "\"" << escapeJson(ObjectSearch::parseFiletime(values[0])) << "\"";
+                    else
+                        oss << "null";
                     break;
+
                 case ObjectSearch::AttributeType::BINARY_SID:
                     if (values[0] != nullptr)
+                        oss << "\"" << escapeJson(ObjectSearch::parseSid(values[0])) << "\"";
+                    else
+                        oss << "null";
+                    break;
+
+                case ObjectSearch::AttributeType::ENUMERATION:
+                    if (values[0] != nullptr && values[0]->bv_len == 4)
                     {
-                        std::string readable_sid = ObjectSearch::parseSid(values[0]);
-                        std::cout << attribute.name << ": " << readable_sid << std::endl;
+                        uint32_t value{*reinterpret_cast<uint32_t *>(values[0]->bv_val)};
+                        oss << value;
                     }
+                    else
+                        oss << "null";
                     break;
                 }
 
                 ldap_value_free_len(values);
+                first_attribute = false;
             }
 
+            oss << "\n    }";
+
             message_entry = ldap_next_entry(p_ldap, message_entry);
+            first_entry = false;
         }
 
+        oss << "\n  ]";
         ldap_msgfree(search_result);
+        first_search_type = false;
     }
+
+    oss << "\n}\n";
+
+    std::cout << oss.str();
 
     ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
     return 0;
