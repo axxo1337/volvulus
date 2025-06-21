@@ -113,8 +113,52 @@ int main(int argc, char **argv)
     std::string base_dn("DC=" + domain_short + ",DC=" + domain_ext);
 
     ObjectSearch::Map objectSearchMap = {
-        {"USERS",
-         {"user", {{"sAMAccountName", ObjectSearch::AttributeType::STRING}, {"displayName", ObjectSearch::AttributeType::STRING}, {"objectSid", ObjectSearch::AttributeType::BINARY_SID}, {"lastLogon", ObjectSearch::AttributeType::FILETIME}, {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE}, {"rid", ObjectSearch::AttributeType::ENUMERATION}}}}};
+        {
+            "USERS",
+            {
+                "user",
+                {
+                    {"sAMAccountName", ObjectSearch::AttributeType::STRING},
+                    {"displayName", ObjectSearch::AttributeType::STRING},
+                    {"distinguishedName", ObjectSearch::AttributeType::STRING},
+                    {"objectSid", ObjectSearch::AttributeType::BINARY_SID},
+                    {"lastLogon", ObjectSearch::AttributeType::FILETIME},
+                    {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE},
+                    {"userAccountControl", ObjectSearch::AttributeType::ENUMERATION},
+                    {"description", ObjectSearch::AttributeType::STRING},
+                    {"nTSecurityDescriptor", ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR},
+                    {"objectClass", ObjectSearch::AttributeType::MULTI_VALUE},
+                },
+            },
+        },
+        {
+            "GROUPS",
+            {
+                "group",
+                {
+                    {"sAMAccountName", ObjectSearch::AttributeType::STRING},
+                    {"displayName", ObjectSearch::AttributeType::STRING},
+                    {"objectSid", ObjectSearch::AttributeType::BINARY_SID},
+                    {"description", ObjectSearch::AttributeType::STRING},
+                    {"member", ObjectSearch::AttributeType::MULTI_VALUE},
+                    {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE},
+                },
+            },
+        },
+        {
+            "ORGANIZATIONAL_UNITS",
+            {
+                "organizationalUnit",
+                {
+                    {"name", ObjectSearch::AttributeType::STRING},
+                    {"distinguishedName", ObjectSearch::AttributeType::STRING},
+                    {"nTSecurityDescriptor", ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR},
+                    {"gPLink", ObjectSearch::AttributeType::STRING},
+                    {"managedBy", ObjectSearch::AttributeType::STRING},
+                },
+            },
+        },
+    };
 
     std::ostringstream oss;
     oss << "{\n";
@@ -205,13 +249,17 @@ int main(int argc, char **argv)
                     break;
 
                 case ObjectSearch::AttributeType::ENUMERATION:
-                    if (values[0] != nullptr && values[0]->bv_len == 4)
+                    if (values[0] != nullptr)
                     {
-                        uint32_t value{*reinterpret_cast<uint32_t *>(values[0]->bv_val)};
+                        uint64_t value{std::stoul(values[0]->bv_val)};
                         oss << value;
                     }
                     else
                         oss << "null";
+                    break;
+
+                case ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR:
+                    ObjectSearch::parseSecurityDescriptor(values[0]);
                     break;
                 }
 

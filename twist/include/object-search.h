@@ -22,7 +22,8 @@ namespace ObjectSearch
         BINARY_SID,
         FILETIME,
         MULTI_VALUE,
-        ENUMERATION
+        ENUMERATION,
+        BINARY_SECURITY_DESCRIPTOR
     };
 
     struct Attribute
@@ -97,5 +98,11 @@ namespace ObjectSearch
         }
 
         return oss.str();
+    }
+
+    std::string parseSecurityDescriptor(const struct berval *value)
+    {
+        std::cout << value->bv_val << "\n";
+        return "";
     }
 };
