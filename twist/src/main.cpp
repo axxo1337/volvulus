@@ -2,13 +2,13 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <fstream>
 
 #include <ldap.h>
 
 #include "arguments.h"
 #include "object-search.h"
 
-// Helper function to escape JSON strings
 std::string escapeJson(const std::string &input)
 {
     std::string output;
@@ -232,7 +232,9 @@ int main(int argc, char **argv)
 
     oss << "\n}\n";
 
-    std::cout << oss.str();
+    std::ofstream output("output.json", std::ios::trunc | std::ios::binary);
+    output.write(oss.str().c_str(), oss.str().size());
+    output.close();
 
     ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
     return 0;
