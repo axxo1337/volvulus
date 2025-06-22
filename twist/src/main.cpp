@@ -8,35 +8,37 @@
 
 #include "arguments.h"
 #include "object-search.h"
+#include "utils.h"
 
-std::string escapeJson(const std::string &input)
+LDAPControl *createSDFlagsControl()
 {
-    std::string output;
-    for (char c : input)
+    BerElement *ber = ber_alloc_t(LBER_USE_DER);
+    if (!ber)
+        return nullptr;
+
+    if (ber_printf(ber, "{i}", 7) == -1)
     {
-        switch (c)
-        {
-        case '"':
-            output += "\\\"";
-            break;
-        case '\\':
-            output += "\\\\";
-            break;
-        case '\n':
-            output += "\\n";
-            break;
-        case '\r':
-            output += "\\r";
-            break;
-        case '\t':
-            output += "\\t";
-            break;
-        default:
-            output += c;
-            break;
-        }
+        ber_free(ber, 1);
+        return nullptr;
     }
-    return output;
+
+    berval *encodedValue = nullptr;
+    if (ber_flatten(ber, &encodedValue) == -1)
+    {
+        ber_free(ber, 1);
+        return nullptr;
+    }
+
+    LDAPControl *control = new LDAPControl;
+    control->ldctl_oid = const_cast<char *>("1.2.840.113556.1.4.801");
+    control->ldctl_iscritical = 0;
+    control->ldctl_value.bv_len = encodedValue->bv_len;
+    control->ldctl_value.bv_val = new char[encodedValue->bv_len];
+    memcpy(control->ldctl_value.bv_val, encodedValue->bv_val, encodedValue->bv_len);
+
+    ber_bvfree(encodedValue);
+    ber_free(ber, 1);
+    return control;
 }
 
 int main(int argc, char **argv)
@@ -142,6 +144,7 @@ int main(int argc, char **argv)
                     {"description", ObjectSearch::AttributeType::STRING},
                     {"member", ObjectSearch::AttributeType::MULTI_VALUE},
                     {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE},
+                    {"nTSecurityDescriptor", ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR},
                 },
             },
         },
@@ -181,7 +184,14 @@ int main(int argc, char **argv)
             attributes.push_back(attribute.name);
         attributes.push_back(nullptr);
 
-        int search_result_code{ldap_search_s(p_ldap, base_dn.c_str(), LDAP_SCOPE_SUBTREE, filter.c_str(), (char **)attributes.data(), 0, &search_result)};
+        LDAPControl *sdControl = createSDFlagsControl();
+        LDAPControl *serverControls[] = {sdControl, nullptr};
+        int search_result_code = ldap_search_ext_s(p_ldap, base_dn.c_str(), LDAP_SCOPE_SUBTREE, filter.c_str(), (char **)attributes.data(), 0, serverControls, nullptr, nullptr, 0, &search_result);
+        if (sdControl)
+        {
+            delete[] sdControl->ldctl_value.bv_val;
+            delete sdControl;
+        }
 
         if (search_result_code != LDAP_SUCCESS)
         {
@@ -218,7 +228,7 @@ int main(int argc, char **argv)
                 {
                 case ObjectSearch::AttributeType::STRING:
                     if (values[0] != nullptr)
-                        oss << "\"" << escapeJson(values[0]->bv_val) << "\"";
+                        oss << "\"" << Utils::escapeJson(values[0]->bv_val) << "\"";
                     else
                         oss << "null";
                     break;
@@ -229,21 +239,21 @@ int main(int argc, char **argv)
                     {
                         if (i > 0)
                             oss << ",\n";
-                        oss << "        \"" << escapeJson(values[i]->bv_val) << "\"";
+                        oss << "        \"" << Utils::escapeJson(values[i]->bv_val) << "\"";
                     }
                     oss << "\n      ]";
                     break;
 
                 case ObjectSearch::AttributeType::FILETIME:
                     if (values[0] != nullptr)
-                        oss << "\"" << escapeJson(ObjectSearch::parseFiletime(values[0])) << "\"";
+                        oss << "\"" << Utils::escapeJson(ObjectSearch::parseFiletime(values[0])) << "\"";
                     else
                         oss << "null";
                     break;
 
                 case ObjectSearch::AttributeType::BINARY_SID:
                     if (values[0] != nullptr)
-                        oss << "\"" << escapeJson(ObjectSearch::parseSid(values[0])) << "\"";
+                        oss << "\"" << Utils::escapeJson(ObjectSearch::parseSid(values[0])) << "\"";
                     else
                         oss << "null";
                     break;
@@ -259,7 +269,10 @@ int main(int argc, char **argv)
                     break;
 
                 case ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR:
-                    ObjectSearch::parseSecurityDescriptor(values[0]);
+                    if (values[0] != nullptr)
+                        ObjectSearch::parseSecurityDescriptor(values[0]);
+                    else
+                        oss << "null";
                     break;
                 }
 

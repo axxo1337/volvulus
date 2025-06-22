@@ -10,6 +10,8 @@
 
 #include <ldap.h>
 
+#include "security-descriptor-types.h"
+
 namespace ObjectSearch
 {
     //
@@ -102,7 +104,96 @@ namespace ObjectSearch
 
     std::string parseSecurityDescriptor(const struct berval *value)
     {
-        std::cout << value->bv_val << "\n";
+        SecurityDescriptorRelative *p_security_descript_relative{reinterpret_cast<SecurityDescriptorRelative *>(value->bv_val)};
+        SID *p_owner{reinterpret_cast<SID *>(value->bv_val + p_security_descript_relative->owner_offset)};
+        SID *p_group{reinterpret_cast<SID *>(value->bv_val + p_security_descript_relative->group_offset)};
+
+        if (p_security_descript_relative->dacl_offset != 0)
+        {
+            ACL *p_dacl{reinterpret_cast<ACL *>(value->bv_val + p_security_descript_relative->dacl_offset)};
+
+            if (reinterpret_cast<uint64_t>(p_dacl) < reinterpret_cast<uint64_t>(value->bv_val + value->bv_len))
+            {
+                ACE_Header *p_ace_header{reinterpret_cast<ACE_Header *>(
+                    reinterpret_cast<uint8_t *>(p_dacl) + sizeof(ACL))};
+
+                for (int i{}; i < p_dacl->ace_count; i++)
+                {
+                    switch (p_ace_header->type)
+                    {
+                    case ACE_Type::ACCESS_ALLOWED_ACE_TYPE:
+                        std::cout << "ACCESS_ALLOWED_ACE\n";
+                        break;
+                    case ACE_Type::ACCESS_DENIED_ACE_TYPE:
+                        std::cout << "ACCESS_DENIED_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_AUDIT_ACE_TYPE:
+                        std::cout << "SYSTEM_AUDIT_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_ALARM_ACE_TYPE:
+                        std::cout << "SYSTEM_ALARM_ACE (Reserved)\n";
+                        break;
+                    case ACE_Type::ACCESS_ALLOWED_COMPOUND_ACE_TYPE:
+                        std::cout << "ACCESS_ALLOWED_COMPOUND_ACE (Reserved)\n";
+                        break;
+                    case ACE_Type::ACCESS_ALLOWED_OBJECT_ACE_TYPE:
+                        std::cout << "ACCESS_ALLOWED_OBJECT_ACE\n";
+                        break;
+                    case ACE_Type::ACCESS_DENIED_OBJECT_ACE_TYPE:
+                        std::cout << "ACCESS_DENIED_OBJECT_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_AUDIT_OBJECT_ACE_TYPE:
+                        std::cout << "SYSTEM_AUDIT_OBJECT_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_ALARM_OBJECT_ACE_TYPE:
+                        std::cout << "SYSTEM_ALARM_OBJECT_ACE (Reserved)\n";
+                        break;
+                    case ACE_Type::ACCESS_ALLOWED_CALLBACK_ACE_TYPE:
+                        std::cout << "ACCESS_ALLOWED_CALLBACK_ACE\n";
+                        break;
+                    case ACE_Type::ACCESS_DENIED_CALLBACK_ACE_TYPE:
+                        std::cout << "ACCESS_DENIED_CALLBACK_ACE\n";
+                        break;
+                    case ACE_Type::ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE:
+                        std::cout << "ACCESS_ALLOWED_CALLBACK_OBJECT_ACE\n";
+                        break;
+                    case ACE_Type::ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE:
+                        std::cout << "ACCESS_DENIED_CALLBACK_OBJECT_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_AUDIT_CALLBACK_ACE_TYPE:
+                        std::cout << "SYSTEM_AUDIT_CALLBACK_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_ALARM_CALLBACK_ACE_TYPE:
+                        std::cout << "SYSTEM_ALARM_CALLBACK_ACE (Reserved)\n";
+                        break;
+                    case ACE_Type::SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE:
+                        std::cout << "SYSTEM_AUDIT_CALLBACK_OBJECT_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE:
+                        std::cout << "SYSTEM_ALARM_CALLBACK_OBJECT_ACE (Reserved)\n";
+                        break;
+                    case ACE_Type::SYSTEM_MANDATORY_LABEL_ACE_TYPE:
+                        std::cout << "SYSTEM_MANDATORY_LABEL_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE:
+                        std::cout << "SYSTEM_RESOURCE_ATTRIBUTE_ACE\n";
+                        break;
+                    case ACE_Type::SYSTEM_SCOPED_POLICY_ID_ACE_TYPE:
+                        std::cout << "SYSTEM_SCOPED_POLICY_ID_ACE\n";
+                        break;
+                    default:
+                        std::cout << "UNKNOWN_ACE_TYPE\n";
+                        break;
+                    }
+
+                    p_ace_header = reinterpret_cast<ACE_Header *>(
+                        reinterpret_cast<uint8_t *>(p_ace_header) + p_ace_header->size);
+                }
+            }
+        }
+
+        ACL *p_sacl{reinterpret_cast<ACL *>(value->bv_val + p_security_descript_relative->sacl_offset)};
+
         return "";
     }
 };

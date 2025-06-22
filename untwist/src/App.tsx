@@ -23,7 +23,7 @@ export default function App() {
           <ReactFlow nodes={initialNodes} edges={initialEdges} />
         ) : (
           <div className="w-full h-full flex items-center justify-center px-3">
-            <Card className="sm:max-w-[500px] w-full">
+            <Card className="sm:max-w-[450px] w-full">
               <CardHeader>
                 <CardTitle>Select dump file</CardTitle>
                 <CardDescription>Attach the file dumped using Volvulus Twist.</CardDescription>
