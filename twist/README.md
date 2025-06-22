@@ -1,11 +1,11 @@
 <div align="center">
-  <h1 align="center">Volvulus Twist</h1>
+  <h3 align="center">Volvulus Twist</h3>
   <p align="center">Generate a dump of an Active Directory's data.</p>
 </div>
 
 ## What is this?
 
-This is an active directory enumeration tool which connects through local directory access protocol (LDAP) and dumps organizational units (OUs), groups and users into a clean JSON output file. That thing is going to need a little rewrite at some point because the code is messy.
+This is an active directory enumeration tool which connects through local directory access protocol (LDAP) and dumps organizational units (OUs), groups and users into a clean JSON output file. **That thing is going to need a little rewrite at some point because the code is very messy**.
 
 ## Build
 
