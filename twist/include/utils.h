@@ -4,7 +4,6 @@
 
 namespace Utils
 {
-
     std::string escapeJson(const std::string &input)
     {
         std::string output;

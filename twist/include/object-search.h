@@ -104,96 +104,163 @@ namespace ObjectSearch
 
     std::string parseSecurityDescriptor(const struct berval *value)
     {
-        SecurityDescriptorRelative *p_security_descript_relative{reinterpret_cast<SecurityDescriptorRelative *>(value->bv_val)};
-        SID *p_owner{reinterpret_cast<SID *>(value->bv_val + p_security_descript_relative->owner_offset)};
-        SID *p_group{reinterpret_cast<SID *>(value->bv_val + p_security_descript_relative->group_offset)};
+        if (value == nullptr || value->bv_len < sizeof(SecurityDescriptorRelative))
+            return "null";
 
-        if (p_security_descript_relative->dacl_offset != 0)
+        SecurityDescriptorRelative *p_security_descriptor = reinterpret_cast<SecurityDescriptorRelative *>(value->bv_val);
+
+        std::ostringstream oss;
+        oss << "{\n";
+        oss << "        \"revision\": " << static_cast<int>(p_security_descriptor->revision) << ",\n";
+        oss << "        \"control\": " << p_security_descriptor->control << ",\n";
+
+        if (p_security_descriptor->owner_offset != 0)
         {
-            ACL *p_dacl{reinterpret_cast<ACL *>(value->bv_val + p_security_descript_relative->dacl_offset)};
+            berval owner_berval;
+            owner_berval.bv_val = value->bv_val + p_security_descriptor->owner_offset;
+            owner_berval.bv_len = value->bv_len - p_security_descriptor->owner_offset;
+            oss << "        \"owner\": \"" << parseSid(&owner_berval) << "\",\n";
+        }
+
+        if (p_security_descriptor->group_offset != 0)
+        {
+            berval group_berval;
+            group_berval.bv_val = value->bv_val + p_security_descriptor->group_offset;
+            group_berval.bv_len = value->bv_len - p_security_descriptor->group_offset;
+            oss << "        \"group\": \"" << parseSid(&group_berval) << "\",\n";
+        }
+
+        if (p_security_descriptor->dacl_offset != 0)
+        {
+            ACL *p_dacl = reinterpret_cast<ACL *>(value->bv_val + p_security_descriptor->dacl_offset);
 
             if (reinterpret_cast<uint64_t>(p_dacl) < reinterpret_cast<uint64_t>(value->bv_val + value->bv_len))
             {
-                ACE_Header *p_ace_header{reinterpret_cast<ACE_Header *>(
-                    reinterpret_cast<uint8_t *>(p_dacl) + sizeof(ACL))};
+                oss << "        \"dacl\": {\n";
+                oss << "          \"revision\": " << static_cast<int>(p_dacl->revision) << ",\n";
+                oss << "          \"size\": " << p_dacl->acl_size << ",\n";
+                oss << "          \"ace_count\": " << p_dacl->ace_count << ",\n";
+                oss << "          \"aces\": [\n";
 
-                for (int i{}; i < p_dacl->ace_count; i++)
+                ACE_Header *p_ace_header = reinterpret_cast<ACE_Header *>(
+                    reinterpret_cast<uint8_t *>(p_dacl) + sizeof(ACL));
+
+                for (int i = 0; i < p_dacl->ace_count; i++)
                 {
-                    switch (p_ace_header->type)
+                    if (i > 0)
+                        oss << ",\n";
+
+                    oss << "            {\n";
+                    oss << "              \"type\": " << static_cast<int>(p_ace_header->type) << ",\n";
+                    oss << "              \"flags\": " << static_cast<int>(p_ace_header->flags) << ",\n";
+                    oss << "              \"size\": " << p_ace_header->size << ",\n";
+
+                    if (p_ace_header->type == ACE_Type::ACCESS_ALLOWED_ACE_TYPE ||
+                        p_ace_header->type == ACE_Type::ACCESS_DENIED_ACE_TYPE)
                     {
-                    case ACE_Type::ACCESS_ALLOWED_ACE_TYPE:
-                        std::cout << "ACCESS_ALLOWED_ACE\n";
-                        break;
-                    case ACE_Type::ACCESS_DENIED_ACE_TYPE:
-                        std::cout << "ACCESS_DENIED_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_AUDIT_ACE_TYPE:
-                        std::cout << "SYSTEM_AUDIT_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_ALARM_ACE_TYPE:
-                        std::cout << "SYSTEM_ALARM_ACE (Reserved)\n";
-                        break;
-                    case ACE_Type::ACCESS_ALLOWED_COMPOUND_ACE_TYPE:
-                        std::cout << "ACCESS_ALLOWED_COMPOUND_ACE (Reserved)\n";
-                        break;
-                    case ACE_Type::ACCESS_ALLOWED_OBJECT_ACE_TYPE:
-                        std::cout << "ACCESS_ALLOWED_OBJECT_ACE\n";
-                        break;
-                    case ACE_Type::ACCESS_DENIED_OBJECT_ACE_TYPE:
-                        std::cout << "ACCESS_DENIED_OBJECT_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_AUDIT_OBJECT_ACE_TYPE:
-                        std::cout << "SYSTEM_AUDIT_OBJECT_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_ALARM_OBJECT_ACE_TYPE:
-                        std::cout << "SYSTEM_ALARM_OBJECT_ACE (Reserved)\n";
-                        break;
-                    case ACE_Type::ACCESS_ALLOWED_CALLBACK_ACE_TYPE:
-                        std::cout << "ACCESS_ALLOWED_CALLBACK_ACE\n";
-                        break;
-                    case ACE_Type::ACCESS_DENIED_CALLBACK_ACE_TYPE:
-                        std::cout << "ACCESS_DENIED_CALLBACK_ACE\n";
-                        break;
-                    case ACE_Type::ACCESS_ALLOWED_CALLBACK_OBJECT_ACE_TYPE:
-                        std::cout << "ACCESS_ALLOWED_CALLBACK_OBJECT_ACE\n";
-                        break;
-                    case ACE_Type::ACCESS_DENIED_CALLBACK_OBJECT_ACE_TYPE:
-                        std::cout << "ACCESS_DENIED_CALLBACK_OBJECT_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_AUDIT_CALLBACK_ACE_TYPE:
-                        std::cout << "SYSTEM_AUDIT_CALLBACK_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_ALARM_CALLBACK_ACE_TYPE:
-                        std::cout << "SYSTEM_ALARM_CALLBACK_ACE (Reserved)\n";
-                        break;
-                    case ACE_Type::SYSTEM_AUDIT_CALLBACK_OBJECT_ACE_TYPE:
-                        std::cout << "SYSTEM_AUDIT_CALLBACK_OBJECT_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_ALARM_CALLBACK_OBJECT_ACE_TYPE:
-                        std::cout << "SYSTEM_ALARM_CALLBACK_OBJECT_ACE (Reserved)\n";
-                        break;
-                    case ACE_Type::SYSTEM_MANDATORY_LABEL_ACE_TYPE:
-                        std::cout << "SYSTEM_MANDATORY_LABEL_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_RESOURCE_ATTRIBUTE_ACE_TYPE:
-                        std::cout << "SYSTEM_RESOURCE_ATTRIBUTE_ACE\n";
-                        break;
-                    case ACE_Type::SYSTEM_SCOPED_POLICY_ID_ACE_TYPE:
-                        std::cout << "SYSTEM_SCOPED_POLICY_ID_ACE\n";
-                        break;
-                    default:
-                        std::cout << "UNKNOWN_ACE_TYPE\n";
-                        break;
+                        uint32_t *mask_ptr = reinterpret_cast<uint32_t *>(
+                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header));
+                        oss << "              \"access_mask\": " << *mask_ptr << ",\n";
+
+                        uint8_t *sid_data = reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t);
+                        berval sid_berval;
+                        sid_berval.bv_val = reinterpret_cast<char *>(sid_data);
+                        sid_berval.bv_len = p_ace_header->size - sizeof(ACE_Header) - sizeof(uint32_t);
+                        oss << "              \"trustee\": \"" << parseSid(&sid_berval) << "\"\n";
                     }
+                    else if (p_ace_header->type == ACE_Type::ACCESS_ALLOWED_OBJECT_ACE_TYPE ||
+                             p_ace_header->type == ACE_Type::ACCESS_DENIED_OBJECT_ACE_TYPE)
+                    {
+                        uint32_t *mask_ptr = reinterpret_cast<uint32_t *>(
+                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header));
+                        uint32_t *flags_ptr = reinterpret_cast<uint32_t *>(
+                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t));
+
+                        oss << "              \"access_mask\": " << *mask_ptr << ",\n";
+                        oss << "              \"object_flags\": " << *flags_ptr << ",\n";
+
+                        size_t sid_offset = sizeof(ACE_Header) + sizeof(uint32_t) + sizeof(uint32_t);
+
+                        if (*flags_ptr & 0x1)
+                        {
+                            uint8_t *guid_data = reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset;
+
+                            uint32_t data1 = *reinterpret_cast<uint32_t *>(guid_data);
+                            uint16_t data2 = *reinterpret_cast<uint16_t *>(guid_data + 4);
+                            uint16_t data3 = *reinterpret_cast<uint16_t *>(guid_data + 6);
+
+                            oss << "              \"object_type_guid\": \"";
+                            oss << std::hex << std::setfill('0')
+                                << std::setw(8) << data1 << "-"
+                                << std::setw(4) << data2 << "-"
+                                << std::setw(4) << data3 << "-";
+
+                            for (int j = 8; j < 10; j++)
+                            {
+                                oss << std::setw(2) << static_cast<int>(guid_data[j]);
+                            }
+                            oss << "-";
+                            for (int j = 10; j < 16; j++)
+                            {
+                                oss << std::setw(2) << static_cast<int>(guid_data[j]);
+                            }
+                            oss << std::dec << "\",\n";
+
+                            sid_offset += 16;
+                        }
+
+                        if (*flags_ptr & 0x2)
+                        {
+                            uint8_t *guid_data = reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset;
+
+                            uint32_t data1 = *reinterpret_cast<uint32_t *>(guid_data);
+                            uint16_t data2 = *reinterpret_cast<uint16_t *>(guid_data + 4);
+                            uint16_t data3 = *reinterpret_cast<uint16_t *>(guid_data + 6);
+
+                            oss << "              \"inherited_object_type_guid\": \"";
+                            oss << std::hex << std::setfill('0')
+                                << std::setw(8) << data1 << "-"
+                                << std::setw(4) << data2 << "-"
+                                << std::setw(4) << data3 << "-";
+
+                            for (int j = 8; j < 10; j++)
+                            {
+                                oss << std::setw(2) << static_cast<int>(guid_data[j]);
+                            }
+                            oss << "-";
+                            for (int j = 10; j < 16; j++)
+                            {
+                                oss << std::setw(2) << static_cast<int>(guid_data[j]);
+                            }
+                            oss << std::dec << "\",\n";
+
+                            sid_offset += 16;
+                        }
+
+                        uint8_t *sid_data = reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset;
+                        berval sid_berval;
+                        sid_berval.bv_val = reinterpret_cast<char *>(sid_data);
+                        sid_berval.bv_len = p_ace_header->size - sid_offset;
+                        oss << "              \"trustee\": \"" << parseSid(&sid_berval) << "\"\n";
+                    }
+                    else
+                        oss << "              \"raw_data\": true\n";
+
+                    oss << "            }";
+
+                    if (p_ace_header->size == 0)
+                        break;
 
                     p_ace_header = reinterpret_cast<ACE_Header *>(
                         reinterpret_cast<uint8_t *>(p_ace_header) + p_ace_header->size);
                 }
+
+                oss << "\n          ]\n";
+                oss << "        }\n";
             }
         }
 
-        ACL *p_sacl{reinterpret_cast<ACL *>(value->bv_val + p_security_descript_relative->sacl_offset)};
-
-        return "";
+        oss << "      }";
+        return oss.str();
     }
 };

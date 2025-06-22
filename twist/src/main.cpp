@@ -270,7 +270,7 @@ int main(int argc, char **argv)
 
                 case ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR:
                     if (values[0] != nullptr)
-                        ObjectSearch::parseSecurityDescriptor(values[0]);
+                        oss << ObjectSearch::parseSecurityDescriptor(values[0]);
                     else
                         oss << "null";
                     break;
