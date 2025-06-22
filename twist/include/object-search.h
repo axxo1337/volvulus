@@ -10,7 +10,7 @@
 
 #include <ldap.h>
 
-#include "security-descriptor-types.h"
+#include "windows-types.h"
 
 namespace ObjectSearch
 {
