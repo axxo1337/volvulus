@@ -9,6 +9,7 @@
 #include "arguments.h"
 #include "object-search.h"
 #include "utils.h"
+#include "json.h"
 
 LDAPControl *createSDFlagsControl()
 {
