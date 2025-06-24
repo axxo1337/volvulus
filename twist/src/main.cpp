@@ -53,10 +53,12 @@ int main(int argc, char **argv)
         {"-sp", {Arguments::Type::INT, false, 389}},
     };
 
-    if (Arguments::parse(argc, argv, arguments))
+    int return_code{Arguments::parse(argc, argv, arguments)};
+
+    if (return_code != 0)
     {
-        std::cerr << "[x] Failed to parse arguments" << std::endl;
-        return -1;
+        std::cerr << "[x] Failed to parse arguments with error code " << return_code << std::endl;
+        return 1;
     }
 
     auto username{Arguments::getValue<std::string>(arguments, "-u")};
@@ -64,42 +66,48 @@ int main(int argc, char **argv)
     auto domain{Arguments::getValue<std::string>(arguments, "-d")};
     auto host{Arguments::getValue<std::string>(arguments, "-h")};
     auto use_secure{Arguments::getValue<bool>(arguments, "-s")};
-    auto port{Arguments::getValue<int>(arguments, "-sp")};
+
+    int port{};
+    auto &port_argument{arguments["-sp"]};
+    if (port_argument.was_specified)
+        port = std::get<int>(port_argument.value);
+    else
+        port = use_secure ? 636 : 389;
 
     LDAP *p_ldap;
-    std::string uri("ldap://" + *host + ":" + std::to_string(*port));
-    int code{ldap_initialize(&p_ldap, uri.c_str())};
+    std::string uri((use_secure ? "ldaps://" : "ldap://") + *host + ":" + std::to_string(*port));
+    return_code = ldap_initialize(&p_ldap, uri.c_str());
 
-    if (code != LDAP_SUCCESS)
+    if (return_code != LDAP_SUCCESS)
     {
         std::cerr << "[x] Failed to initialize LDAP: " << ldap_err2string(code) << std::endl;
-        return -1;
+        return 1;
     }
 
     int version = LDAP_VERSION3;
 
-    code = ldap_set_option(p_ldap, LDAP_OPT_PROTOCOL_VERSION, &version);
-    if (code != LDAP_OPT_SUCCESS)
+    return_code = ldap_set_option(p_ldap, LDAP_OPT_PROTOCOL_VERSION, &version);
+    if (return_code != LDAP_OPT_SUCCESS)
     {
         std::cerr << "[x] Failed to set LDAP version: " << ldap_err2string(code) << std::endl;
         ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
-        return -1;
+        return 1;
     }
 
-    code = ldap_set_option(p_ldap, LDAP_OPT_REFERRALS, LDAP_OPT_OFF);
-    if (code != LDAP_OPT_SUCCESS)
+    return_code = ldap_set_option(p_ldap, LDAP_OPT_REFERRALS, LDAP_OPT_OFF);
+    if (return_code != LDAP_OPT_SUCCESS)
         std::cout << "[!] Could not disable referrals" << std::endl;
 
     struct timeval timeout;
     timeout.tv_sec = 30;
     timeout.tv_usec = 0;
-    code = ldap_set_option(p_ldap, LDAP_OPT_NETWORK_TIMEOUT, &timeout);
-    if (code != LDAP_OPT_SUCCESS)
+    return_code = ldap_set_option(p_ldap, LDAP_OPT_NETWORK_TIMEOUT, &timeout);
+    if (return_code != LDAP_OPT_SUCCESS)
         std::cout << "[!] Could not set network timeout" << std::endl;
 
     int tls_reqcert = LDAP_OPT_X_TLS_NEVER;
-    code = ldap_set_option(p_ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, &tls_reqcert);
-    if (code != LDAP_OPT_SUCCESS)
+    return_code = ldap_set_option(p_ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, &tls_reqcert);
+    if (return_code != LDAP_OPT_SUCCESS)
         std::cout << "[!] Could not set TLS certificate requirements" << std::endl;
 
     size_t domain_short_end{domain->find('.')};
@@ -107,12 +115,12 @@ int main(int argc, char **argv)
     std::string domain_ext{domain->substr(domain_short_end + 1, domain->length() - domain_short_end - 1)};
     std::string bind_dn{domain_short + "\\" + *username};
 
-    code = ldap_simple_bind_s(p_ldap, bind_dn.c_str(), password->c_str());
+    return_code = ldap_simple_bind_s(p_ldap, bind_dn.c_str(), password->c_str());
 
-    if (code != LDAP_SUCCESS)
+    if (return_code != LDAP_SUCCESS)
     {
         std::cerr << "[x] Failed to bind LDAP: " << ldap_err2string(code) << std::endl;
-        return -1;
+        return 1;
     }
 
     std::string base_dn("DC=" + domain_short + ",DC=" + domain_ext);
@@ -250,10 +258,9 @@ int main(int argc, char **argv)
         root_json_object.setValue(entry.first, sub_json_object);
     }
 
-    oss << "\n}\n";
-
+    std::string stringified_json{root_json_object.toString()};
     std::ofstream output("output.json", std::ios::trunc | std::ios::binary);
-    output.write(oss.str().c_str(), oss.str().size());
+    output.write(stringified_json.c_str(), stringified_json.size());
     output.close();
 
     ldap_unbind_ext_s(p_ldap, nullptr, nullptr);

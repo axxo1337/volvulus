@@ -24,6 +24,7 @@ namespace Arguments
         Type type;
         bool is_required;
         std::optional<std::variant<std::string, int>> value;
+        bool was_specified;
     };
 
     using Map = std::unordered_map<std::string, Argument>;
@@ -32,7 +33,7 @@ namespace Arguments
     // [SECTION] Functions
     //
 
-    bool parse(int argc, char **argv, Map &arguments)
+    int parse(int argc, char **argv, Map &arguments)
     {
         if (argc > 0)
         {
@@ -47,7 +48,7 @@ namespace Arguments
                     if (last_it == arguments.end())
                     {
                         std::cerr << "[x] Argument \"" << argv[i] << "\" not found" << std::endl;
-                        return true;
+                        return 1;
                     }
 
                     /* Handle special case of boolean values */
@@ -62,7 +63,7 @@ namespace Arguments
                     if (last_it->second.value != std::nullopt && last_it->second.is_required)
                     {
                         std::cerr << "[x] Argument's value was already provided" << std::endl;
-                        return true;
+                        return 2;
                     }
 
                     switch (last_it->second.type)
@@ -75,8 +76,10 @@ namespace Arguments
                         break;
                     default:
                         std::cerr << "[x] Unhandled argument type" << std::endl;
-                        return true;
+                        return 3;
                     }
+
+                    last_it->second.was_specified = true;
 
                     last_it = arguments.end();
                 }
@@ -88,11 +91,11 @@ namespace Arguments
             if (it.second.is_required && it.second.value == std::nullopt)
             {
                 std::cerr << "[x] Required argument \"" << it.first << "\"'s value is missing" << std::endl;
-                return true;
+                return 4;
             }
         }
 
-        return false;
+        return 0;
     }
 
     template <typename T>
