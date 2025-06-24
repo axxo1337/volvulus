@@ -80,7 +80,7 @@ int main(int argc, char **argv)
 
     if (return_code != LDAP_SUCCESS)
     {
-        std::cerr << "[x] Failed to initialize LDAP: " << ldap_err2string(code) << std::endl;
+        std::cerr << "[x] Failed to initialize LDAP: " << ldap_err2string(return_code) << std::endl;
         return 1;
     }
 
@@ -89,7 +89,7 @@ int main(int argc, char **argv)
     return_code = ldap_set_option(p_ldap, LDAP_OPT_PROTOCOL_VERSION, &version);
     if (return_code != LDAP_OPT_SUCCESS)
     {
-        std::cerr << "[x] Failed to set LDAP version: " << ldap_err2string(code) << std::endl;
+        std::cerr << "[x] Failed to set LDAP version: " << ldap_err2string(return_code) << std::endl;
         ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
         return 1;
     }
@@ -105,10 +105,14 @@ int main(int argc, char **argv)
     if (return_code != LDAP_OPT_SUCCESS)
         std::cout << "[!] Could not set network timeout" << std::endl;
 
-    int tls_reqcert = LDAP_OPT_X_TLS_NEVER;
-    return_code = ldap_set_option(p_ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, &tls_reqcert);
-    if (return_code != LDAP_OPT_SUCCESS)
-        std::cout << "[!] Could not set TLS certificate requirements" << std::endl;
+    if (use_secure)
+    {
+        int tls_req = LDAP_OPT_X_TLS_NEVER;
+        ldap_set_option(p_ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, &tls_req);
+
+        int tls_protocol = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2;
+        ldap_set_option(p_ldap, LDAP_OPT_X_TLS_PROTOCOL_MIN, &tls_protocol);
+    }
 
     size_t domain_short_end{domain->find('.')};
     std::string domain_short{domain->substr(0, domain_short_end)};
@@ -119,7 +123,7 @@ int main(int argc, char **argv)
 
     if (return_code != LDAP_SUCCESS)
     {
-        std::cerr << "[x] Failed to bind LDAP: " << ldap_err2string(code) << std::endl;
+        std::cerr << "[x] Failed to bind LDAP: " << ldap_err2string(return_code) << std::endl;
         return 1;
     }
 
