@@ -49,6 +49,7 @@ int main(int argc, char **argv)
         {"-p", {Arguments::Type::STRING, true, std::nullopt}},
         {"-d", {Arguments::Type::STRING, true, std::nullopt}},
         {"-h", {Arguments::Type::STRING, true, std::nullopt}},
+        {"-s", {Arguments::Type::BOOLEAN, false, false}},
         {"-sp", {Arguments::Type::INT, false, 389}},
     };
 
@@ -58,11 +59,12 @@ int main(int argc, char **argv)
         return -1;
     }
 
-    auto username = Arguments::getValue<std::string>(arguments, "-u");
-    auto password = Arguments::getValue<std::string>(arguments, "-p");
-    auto domain = Arguments::getValue<std::string>(arguments, "-d");
-    auto host = Arguments::getValue<std::string>(arguments, "-h");
-    auto port = Arguments::getValue<int>(arguments, "-sp");
+    auto username{Arguments::getValue<std::string>(arguments, "-u")};
+    auto password{Arguments::getValue<std::string>(arguments, "-p")};
+    auto domain{Arguments::getValue<std::string>(arguments, "-d")};
+    auto host{Arguments::getValue<std::string>(arguments, "-h")};
+    auto use_secure{Arguments::getValue<bool>(arguments, "-s")};
+    auto port{Arguments::getValue<int>(arguments, "-sp")};
 
     LDAP *p_ldap;
     std::string uri("ldap://" + *host + ":" + std::to_string(*port));

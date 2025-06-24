@@ -15,7 +15,8 @@ namespace Arguments
     enum class Type
     {
         STRING = 0,
-        INT
+        INT,
+        BOOLEAN
     };
 
     struct Argument
@@ -47,6 +48,13 @@ namespace Arguments
                     {
                         std::cerr << "[x] Argument \"" << argv[i] << "\" not found" << std::endl;
                         return true;
+                    }
+
+                    /* Handle special case of boolean values */
+                    if (last_it->second.type == Type::BOOLEAN)
+                    {
+                        last_it->second.value = true;
+                        last_it = arguments.end();
                     }
                 }
                 else
