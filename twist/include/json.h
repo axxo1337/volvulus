@@ -149,7 +149,7 @@ namespace JSON
             map[key].value = std::move(value);
         }
 
-        void setValue(const std::string &key, std::vector<Value> &&value)
+        void setValue(const std::string &key, std::vector<Value> &value)
         {
             map[key].type = ValueType::ARRAY;
             map[key].value = std::move(value);

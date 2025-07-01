@@ -103,24 +103,24 @@ namespace ObjectSearch
         return oss.str();
     }
 
-    JSON::Object parseSecurityDescriptor(const struct berval *value)
+    std::unique_ptr<JSON::Object> parseSecurityDescriptor(const struct berval *value)
     {
-        JSON::Object result;
+        std::unique_ptr<JSON::Object> result{std::make_unique<JSON::Object>()};
 
         if (value == nullptr || value->bv_len < sizeof(SecurityDescriptorRelative))
-            return result;
+            return std::move(result);
 
         SecurityDescriptorRelative *p_security_descriptor = reinterpret_cast<SecurityDescriptorRelative *>(value->bv_val);
 
-        result.setValue("revision", static_cast<int>(p_security_descriptor->revision));
-        result.setValue("control", static_cast<int>(p_security_descriptor->control));
+        result->setValue("revision", static_cast<int>(p_security_descriptor->revision));
+        result->setValue("control", static_cast<int>(p_security_descriptor->control));
 
         if (p_security_descriptor->owner_offset != 0)
         {
             berval owner_berval;
             owner_berval.bv_val = value->bv_val + p_security_descriptor->owner_offset;
             owner_berval.bv_len = value->bv_len - p_security_descriptor->owner_offset;
-            result.setValue("owner", parseSid(&owner_berval));
+            result->setValue("owner", parseSid(&owner_berval));
         }
 
         if (p_security_descriptor->group_offset != 0)
@@ -128,7 +128,7 @@ namespace ObjectSearch
             berval group_berval;
             group_berval.bv_val = value->bv_val + p_security_descriptor->group_offset;
             group_berval.bv_len = value->bv_len - p_security_descriptor->group_offset;
-            result.setValue("group", parseSid(&group_berval));
+            result->setValue("group", parseSid(&group_berval));
         }
 
         if (p_security_descriptor->dacl_offset != 0)
@@ -137,45 +137,45 @@ namespace ObjectSearch
 
             if (reinterpret_cast<uint64_t>(p_dacl) < reinterpret_cast<uint64_t>(value->bv_val + value->bv_len))
             {
-                JSON::Object dacl_obj;
-                dacl_obj.setValue("revision", static_cast<int>(p_dacl->revision));
-                dacl_obj.setValue("size", static_cast<int>(p_dacl->acl_size));
-                dacl_obj.setValue("ace_count", static_cast<int>(p_dacl->ace_count));
+                std::unique_ptr<JSON::Object> dacl_obj{std::make_unique<JSON::Object>()};
+                dacl_obj->setValue("revision", static_cast<int>(p_dacl->revision));
+                dacl_obj->setValue("size", static_cast<int>(p_dacl->acl_size));
+                dacl_obj->setValue("ace_count", static_cast<int>(p_dacl->ace_count));
 
                 std::vector<JSON::Value> aces;
-                ACE_Header *p_ace_header = reinterpret_cast<ACE_Header *>(
-                    reinterpret_cast<uint8_t *>(p_dacl) + sizeof(ACL));
+                ACE_Header *p_ace_header{reinterpret_cast<ACE_Header *>(
+                    reinterpret_cast<uint8_t *>(p_dacl) + sizeof(ACL))};
 
                 for (int i = 0; i < p_dacl->ace_count; i++)
                 {
-                    JSON::Object ace_obj;
-                    ace_obj.setValue("type", static_cast<int>(p_ace_header->type));
-                    ace_obj.setValue("flags", static_cast<int>(p_ace_header->flags));
-                    ace_obj.setValue("size", static_cast<int>(p_ace_header->size));
+                    std::unique_ptr<JSON::Object> ace_obj = std::make_unique<JSON::Object>();
+                    ace_obj->setValue("type", static_cast<int>(p_ace_header->type));
+                    ace_obj->setValue("flags", static_cast<int>(p_ace_header->flags));
+                    ace_obj->setValue("size", static_cast<int>(p_ace_header->size));
 
                     if (p_ace_header->type == ACE_Type::ACCESS_ALLOWED_ACE_TYPE ||
                         p_ace_header->type == ACE_Type::ACCESS_DENIED_ACE_TYPE)
                     {
                         uint32_t *mask_ptr = reinterpret_cast<uint32_t *>(
                             reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header));
-                        ace_obj.setValue("access_mask", static_cast<int>(*mask_ptr));
+                        ace_obj->setValue("access_mask", static_cast<int>(*mask_ptr));
 
                         uint8_t *sid_data{reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t)};
                         berval sid_berval;
-                        sid_berval.bv_val{reinterpret_cast<char *>(sid_data)};
-                        sid_berval.bv_len{p_ace_header->size - sizeof(ACE_Header) - sizeof(uint32_t)};
-                        ace_obj.setValue("trustee", parseSid(&sid_berval));
+                        sid_berval.bv_val = reinterpret_cast<char *>(sid_data);
+                        sid_berval.bv_len = p_ace_header->size - sizeof(ACE_Header) - sizeof(uint32_t);
+                        ace_obj->setValue("trustee", parseSid(&sid_berval));
                     }
                     else if (p_ace_header->type == ACE_Type::ACCESS_ALLOWED_OBJECT_ACE_TYPE ||
                              p_ace_header->type == ACE_Type::ACCESS_DENIED_OBJECT_ACE_TYPE)
                     {
-                        uint32_t *mask_ptr{reinterpret_cast<uint32_t *>(
-                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header))};
-                        uint32_t *flags_ptr{reinterpret_cast<uint32_t *>(
-                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t))};
+                        uint32_t *mask_ptr = reinterpret_cast<uint32_t *>(
+                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header));
+                        uint32_t *flags_ptr = reinterpret_cast<uint32_t *>(
+                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t));
 
-                        ace_obj.setValue("access_mask", static_cast<int>(*mask_ptr));
-                        ace_obj.setValue("object_flags", static_cast<int>(*flags_ptr));
+                        ace_obj->setValue("access_mask", static_cast<int>(*mask_ptr));
+                        ace_obj->setValue("object_flags", static_cast<int>(*flags_ptr));
 
                         size_t sid_offset{sizeof(ACE_Header) + sizeof(uint32_t) + sizeof(uint32_t)};
 
@@ -201,7 +201,7 @@ namespace ObjectSearch
                             for (int j = 10; j < 16; j++)
                                 guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
 
-                            ace_obj.setValue("object_type_guid", guid_oss.str());
+                            ace_obj->setValue("object_type_guid", guid_oss.str());
                             sid_offset += 16;
                         }
 
@@ -227,20 +227,20 @@ namespace ObjectSearch
                             for (int j = 10; j < 16; j++)
                                 guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
 
-                            ace_obj.setValue("inherited_object_type_guid", guid_oss.str());
+                            ace_obj->setValue("inherited_object_type_guid", guid_oss.str());
                             sid_offset += 16;
                         }
 
                         uint8_t *sid_data{reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset};
                         berval sid_berval;
-                        sid_berval.bv_val{reinterpret_cast<char *>(sid_data)};
-                        sid_berval.bv_len{p_ace_header->size - sid_offset};
-                        ace_obj.setValue("trustee", parseSid(&sid_berval));
+                        sid_berval.bv_val = reinterpret_cast<char *>(sid_data);
+                        sid_berval.bv_len = p_ace_header->size - sid_offset;
+                        ace_obj->setValue("trustee", parseSid(&sid_berval));
                     }
                     else
-                        ace_obj.setValue("raw_data", true);
+                        ace_obj->setValue("raw_data", 1);
 
-                    aces.push_back(JSON::Value(ace_obj));
+                    aces.push_back(JSON::Value(JSON::ValueType::OBJECT, std::move(ace_obj)));
 
                     if (p_ace_header->size == 0)
                         break;
@@ -249,8 +249,8 @@ namespace ObjectSearch
                         reinterpret_cast<uint8_t *>(p_ace_header) + p_ace_header->size);
                 }
 
-                dacl_obj.setValue("aces", aces);
-                result.setValue("dacl", dacl_obj);
+                dacl_obj->setValue("aces", aces);
+                result->setValue("dacl", std::move(dacl_obj));
             }
         }
 

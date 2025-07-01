@@ -24,6 +24,7 @@ It requires the following arguments:
 - `-p` : The user's password.
 - `-h` : The host's IP.
 - `-d` : The active directory domain.
+- `-s` : When present TLS should be used (you give it no additional value).
 - `-sp` : The server port (defaults to 389).
 
 If it corretly connect to the server you should end up with an `output.json` file in the working directory.

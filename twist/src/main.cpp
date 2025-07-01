@@ -65,17 +65,17 @@ int main(int argc, char **argv)
     auto password{Arguments::getValue<std::string>(arguments, "-p")};
     auto domain{Arguments::getValue<std::string>(arguments, "-d")};
     auto host{Arguments::getValue<std::string>(arguments, "-h")};
-    auto use_secure{Arguments::getValue<bool>(arguments, "-s")};
+    auto use_secure{Arguments::getValue<int>(arguments, "-s") != 0};
 
     int port{};
     auto &port_argument{arguments["-sp"]};
     if (port_argument.was_specified)
-        port = std::get<int>(port_argument.value);
+        port = std::get<int>(*port_argument.value);
     else
         port = use_secure ? 636 : 389;
 
     LDAP *p_ldap;
-    std::string uri((use_secure ? "ldaps://" : "ldap://") + *host + ":" + std::to_string(*port));
+    std::string uri((use_secure ? "ldaps://" : "ldap://") + *host + ":" + std::to_string(port));
     return_code = ldap_initialize(&p_ldap, uri.c_str());
 
     if (return_code != LDAP_SUCCESS)
@@ -178,13 +178,14 @@ int main(int argc, char **argv)
         },
     };
 
-    JSON::Object root_json_object;
+    std::unique_ptr<JSON::Object> root_json_object{std::make_unique<JSON::Object>()};
 
     for (auto &entry : objectSearchMap)
     {
         LDAPMessage *search_result;
         std::string filter{"(objectClass=" + std::string(entry.second.objectClass) + ")"};
-        JSON::Object sub_json_object;
+
+        std::vector<JSON::Value> objects_array;
 
         std::vector<const char *> attributes;
         for (const auto &attribute : entry.second.attributes)
@@ -210,6 +211,8 @@ int main(int argc, char **argv)
 
         while (message_entry != nullptr)
         {
+            std::unique_ptr<JSON::Object> sub_json_object{std::make_unique<JSON::Object>()};
+
             for (const auto &attribute : entry.second.attributes)
             {
                 berval **values{ldap_get_values_len(p_ldap, message_entry, attribute.name)};
@@ -221,48 +224,52 @@ int main(int argc, char **argv)
                 {
                 case ObjectSearch::AttributeType::STRING:
                     if (values[0] != nullptr)
-                        sub_json_object.setValue(attribute.name, values[0]->bv_val);
+                        sub_json_object->setValue(attribute.name, values[0]->bv_val);
                     break;
 
                 case ObjectSearch::AttributeType::MULTI_VALUE:
+                {
                     std::vector<JSON::Value> json_values;
                     for (int i{}; values[i] != nullptr; i++)
-                        json_values.push_back(JSON::Value(values[i]->bv_val));
-                    sub_json_object.setValue(attribute.name, json_values);
-                    break;
+                        json_values.push_back(JSON::Value(JSON::ValueType::STRING, values[i]->bv_val));
+                    sub_json_object->setValue(attribute.name, json_values);
+                }
+                break;
 
                 case ObjectSearch::AttributeType::FILETIME:
                     if (values[0] != nullptr)
-                        sub_json_object.setValue(attribute.name, ObjectSearch::parseFiletime(values[0]));
+                        sub_json_object->setValue(attribute.name, ObjectSearch::parseFiletime(values[0]));
                     break;
 
                 case ObjectSearch::AttributeType::BINARY_SID:
                     if (values[0] != nullptr)
-                        sub_json_object.setValue(attribute.name, ObjectSearch::parseSid(values[0]));
+                        sub_json_object->setValue(attribute.name, ObjectSearch::parseSid(values[0]));
                     break;
 
                 case ObjectSearch::AttributeType::ENUMERATION:
                     if (values[0] != nullptr)
-                        sub_json_object.setValue(attribute.name, std::stoul(values[0]->bv_val));
+                        sub_json_object->setValue(attribute.name, std::stoul(values[0]->bv_val));
                     break;
 
                 case ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR:
                     if (values[0] != nullptr)
-                        sub_json_object.setValue(attribute.name, ObjectSearch::parseSecurityDescriptor(values[0]));
+                        sub_json_object->setValue(attribute.name, ObjectSearch::parseSecurityDescriptor(values[0]));
                     break;
                 }
 
                 ldap_value_free_len(values);
             }
 
+            objects_array.push_back(JSON::Value(JSON::ValueType::OBJECT, std::move(sub_json_object)));
             message_entry = ldap_next_entry(p_ldap, message_entry);
         }
 
         ldap_msgfree(search_result);
-        root_json_object.setValue(entry.first, sub_json_object);
+
+        root_json_object->setValue(entry.first, objects_array);
     }
 
-    std::string stringified_json{root_json_object.toString()};
+    std::string stringified_json{root_json_object->toString()};
     std::ofstream output("output.json", std::ios::trunc | std::ios::binary);
     output.write(stringified_json.c_str(), stringified_json.size());
     output.close();
