@@ -160,6 +160,7 @@ int main(int argc, char **argv)
                     {"member", ObjectSearch::AttributeType::MULTI_VALUE},
                     {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE},
                     {"nTSecurityDescriptor", ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR},
+                    {"distinguishedName", ObjectSearch::AttributeType::STRING},
                 },
             },
         },
