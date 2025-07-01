@@ -35,5 +35,7 @@ If it corretly connect to the server you should end up with an `output.json` fil
 
 ## Update plans
 
-1. [DONE] Setup an actual JSON generation system. The current string stream system is far too ugly and confusing for anyone to understand.
-2. Find a way to support TLS connection.
+- [x] Setup an actual JSON generation system. The current string stream system is far too ugly and confusing for anyone to understand.
+- [] Find a way to support TLS connection.
+- [] Improve README (maybe look at templates)
+- [] Improve code readability and establish contribution guide
