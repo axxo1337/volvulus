@@ -50,8 +50,6 @@ int main(int argc, char **argv)
         {"-d", {Arguments::Type::STRING, true, std::nullopt}},
         {"-h", {Arguments::Type::STRING, true, std::nullopt}},
         {"-s", {Arguments::Type::BOOLEAN, false, false}},
-        {"-st", {Arguments::Type::BOOLEAN, false, false}},
-        {"-tls-verify", {Arguments::Type::BOOLEAN, false, false}},
         {"-sp", {Arguments::Type::INT, false, 389}},
     };
 
@@ -68,8 +66,6 @@ int main(int argc, char **argv)
     auto domain{Arguments::getValue<std::string>(arguments, "-d")};
     auto host{Arguments::getValue<std::string>(arguments, "-h")};
     auto use_secure{Arguments::getValue<int>(arguments, "-s").value_or(0) != 0};
-    auto use_start_tls{Arguments::getValue<int>(arguments, "-st").value_or(0) != 0};
-    auto tls_verify{Arguments::getValue<int>(arguments, "-tls-verify").value_or(0) != 0};
 
     int port{};
     auto &port_argument{arguments["-sp"]};
@@ -78,8 +74,12 @@ int main(int argc, char **argv)
     else
         port = use_secure ? 636 : 389;
 
+    // Auto-determine whether to use LDAPS (port 636) or StartTLS (any other port) when -s is specified
+    bool is_ldaps = use_secure && (port == 636);
+    bool is_start_tls = use_secure && (port != 636);
+
     LDAP *p_ldap;
-    std::string uri((use_secure ? "ldaps://" : "ldap://") + *host + ":" + std::to_string(port));
+    std::string uri((is_ldaps ? "ldaps://" : "ldap://") + *host + ":" + std::to_string(port));
     return_code = ldap_initialize(&p_ldap, uri.c_str());
 
     if (return_code != LDAP_SUCCESS)
@@ -109,16 +109,16 @@ int main(int argc, char **argv)
     if (return_code != LDAP_OPT_SUCCESS)
         std::cout << "[!] Could not set network timeout" << std::endl;
 
-    if (use_secure || use_start_tls)
+    if (is_ldaps || is_start_tls)
     {
-        int tls_req = tls_verify ? LDAP_OPT_X_TLS_DEMAND : LDAP_OPT_X_TLS_NEVER;
+        int tls_req = LDAP_OPT_X_TLS_NEVER;
         ldap_set_option(p_ldap, LDAP_OPT_X_TLS_REQUIRE_CERT, &tls_req);
 
         int tls_protocol = LDAP_OPT_X_TLS_PROTOCOL_TLS1_2;
         ldap_set_option(p_ldap, LDAP_OPT_X_TLS_PROTOCOL_MIN, &tls_protocol);
     }
 
-    if (use_start_tls)
+    if (is_start_tls)
     {
         return_code = ldap_start_tls_s(p_ldap, nullptr, nullptr);
         if (return_code != LDAP_SUCCESS)
