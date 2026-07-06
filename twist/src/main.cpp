@@ -233,6 +233,18 @@ int main(int argc, char **argv)
                 },
             },
         },
+        {
+            "GPOS",
+            {
+                "groupPolicyContainer",
+                {
+                    {"displayName", ObjectSearch::AttributeType::STRING},
+                    {"distinguishedName", ObjectSearch::AttributeType::STRING},
+                    {"gPCFileSysPath", ObjectSearch::AttributeType::STRING},
+                    {"nTSecurityDescriptor", ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR},
+                },
+            },
+        },
     };
 
     std::unique_ptr<JSON::Object> root_json_object{std::make_unique<JSON::Object>()};
