@@ -74,7 +74,6 @@ int main(int argc, char **argv)
     else
         port = use_secure ? 636 : 389;
 
-    // Auto-determine whether to use LDAPS (port 636) or StartTLS (any other port) when -s is specified
     bool is_ldaps = use_secure && (port == 636);
     bool is_start_tls = use_secure && (port != 636);
 
@@ -190,6 +189,33 @@ int main(int argc, char **argv)
                     {"nTSecurityDescriptor", ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR},
                     {"gPLink", ObjectSearch::AttributeType::STRING},
                     {"managedBy", ObjectSearch::AttributeType::STRING},
+                },
+            },
+        },
+        {
+            "COMPUTERS",
+            {
+                "computer",
+                {
+                    {"sAMAccountName", ObjectSearch::AttributeType::STRING},
+                    {"displayName", ObjectSearch::AttributeType::STRING},
+                    {"distinguishedName", ObjectSearch::AttributeType::STRING},
+                    {"objectSid", ObjectSearch::AttributeType::BINARY_SID},
+                    {"memberOf", ObjectSearch::AttributeType::MULTI_VALUE},
+                    {"userAccountControl", ObjectSearch::AttributeType::ENUMERATION},
+                    {"servicePrincipalName", ObjectSearch::AttributeType::MULTI_VALUE},
+                    {"nTSecurityDescriptor", ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR},
+                },
+            },
+        },
+        {
+            "DOMAINS",
+            {
+                "domainDNS",
+                {
+                    {"distinguishedName", ObjectSearch::AttributeType::STRING},
+                    {"objectSid", ObjectSearch::AttributeType::BINARY_SID},
+                    {"nTSecurityDescriptor", ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR},
                 },
             },
         },
