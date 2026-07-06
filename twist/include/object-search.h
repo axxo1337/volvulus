@@ -49,10 +49,19 @@ namespace ObjectSearch
 
     std::string parseFiletime(const struct berval *value)
     {
-        if (value == nullptr)
+        if (value == nullptr || value->bv_val == nullptr)
             return "Invalid";
 
-        uint64_t filetime{std::stoull(value->bv_val)};
+        std::string filetime_str(value->bv_val, value->bv_len);
+        uint64_t filetime{};
+        try
+        {
+            filetime = std::stoull(filetime_str);
+        }
+        catch (...)
+        {
+            return "Invalid";
+        }
 
         if (filetime == 0 || filetime == 0x7FFFFFFFFFFFFFFF)
             return "Never";
@@ -70,7 +79,7 @@ namespace ObjectSearch
 
     std::string parseSid(const struct berval *value)
     {
-        if (value == nullptr || value->bv_len < 8)
+        if (value == nullptr || value->bv_val == nullptr || value->bv_len < 8)
             return "Invalid";
 
         const uint8_t *sid{reinterpret_cast<uint8_t *>(value->bv_val)};
@@ -79,6 +88,8 @@ namespace ObjectSearch
             return "Invalid";
 
         uint8_t subauth_count{sid[1]};
+        if (value->bv_len < static_cast<size_t>(8 + (subauth_count * 4)))
+            return "Invalid";
 
         uint64_t authority = 0;
         for (int i = 0; i < 6; i++)
@@ -107,7 +118,7 @@ namespace ObjectSearch
     {
         std::unique_ptr<JSON::Object> result{std::make_unique<JSON::Object>()};
 
-        if (value == nullptr || value->bv_len < sizeof(SecurityDescriptorRelative))
+        if (value == nullptr || value->bv_val == nullptr || value->bv_len < sizeof(SecurityDescriptorRelative))
             return std::move(result);
 
         SecurityDescriptorRelative *p_security_descriptor = reinterpret_cast<SecurityDescriptorRelative *>(value->bv_val);
@@ -117,37 +128,54 @@ namespace ObjectSearch
 
         if (p_security_descriptor->owner_offset != 0)
         {
-            berval owner_berval;
-            owner_berval.bv_val = value->bv_val + p_security_descriptor->owner_offset;
-            owner_berval.bv_len = value->bv_len - p_security_descriptor->owner_offset;
-            result->setValue("owner", parseSid(&owner_berval));
+            if (p_security_descriptor->owner_offset < value->bv_len && 
+                value->bv_len - p_security_descriptor->owner_offset >= 8)
+            {
+                berval owner_berval;
+                owner_berval.bv_val = value->bv_val + p_security_descriptor->owner_offset;
+                owner_berval.bv_len = value->bv_len - p_security_descriptor->owner_offset;
+                result->setValue("owner", parseSid(&owner_berval));
+            }
         }
 
         if (p_security_descriptor->group_offset != 0)
         {
-            berval group_berval;
-            group_berval.bv_val = value->bv_val + p_security_descriptor->group_offset;
-            group_berval.bv_len = value->bv_len - p_security_descriptor->group_offset;
-            result->setValue("group", parseSid(&group_berval));
+            if (p_security_descriptor->group_offset < value->bv_len && 
+                value->bv_len - p_security_descriptor->group_offset >= 8)
+            {
+                berval group_berval;
+                group_berval.bv_val = value->bv_val + p_security_descriptor->group_offset;
+                group_berval.bv_len = value->bv_len - p_security_descriptor->group_offset;
+                result->setValue("group", parseSid(&group_berval));
+            }
         }
 
         if (p_security_descriptor->dacl_offset != 0)
         {
-            ACL *p_dacl = reinterpret_cast<ACL *>(value->bv_val + p_security_descriptor->dacl_offset);
-
-            if (reinterpret_cast<uint64_t>(p_dacl) < reinterpret_cast<uint64_t>(value->bv_val + value->bv_len))
+            if (p_security_descriptor->dacl_offset + sizeof(ACL) <= value->bv_len)
             {
+                ACL *p_dacl = reinterpret_cast<ACL *>(value->bv_val + p_security_descriptor->dacl_offset);
+
                 std::unique_ptr<JSON::Object> dacl_obj{std::make_unique<JSON::Object>()};
                 dacl_obj->setValue("revision", static_cast<int>(p_dacl->revision));
                 dacl_obj->setValue("size", static_cast<int>(p_dacl->acl_size));
                 dacl_obj->setValue("ace_count", static_cast<int>(p_dacl->ace_count));
 
                 std::vector<JSON::Value> aces;
-                ACE_Header *p_ace_header{reinterpret_cast<ACE_Header *>(
-                    reinterpret_cast<uint8_t *>(p_dacl) + sizeof(ACL))};
+                size_t current_offset = p_security_descriptor->dacl_offset + sizeof(ACL);
 
                 for (int i = 0; i < p_dacl->ace_count; i++)
                 {
+                    if (current_offset + sizeof(ACE_Header) > value->bv_len)
+                        break;
+
+                    ACE_Header *p_ace_header{reinterpret_cast<ACE_Header *>(
+                        reinterpret_cast<uint8_t *>(value->bv_val) + current_offset)};
+
+                    if (p_ace_header->size < sizeof(ACE_Header) || 
+                        current_offset + p_ace_header->size > value->bv_len)
+                        break;
+
                     std::unique_ptr<JSON::Object> ace_obj = std::make_unique<JSON::Object>();
                     ace_obj->setValue("type", static_cast<int>(p_ace_header->type));
                     ace_obj->setValue("flags", static_cast<int>(p_ace_header->flags));
@@ -156,97 +184,102 @@ namespace ObjectSearch
                     if (p_ace_header->type == ACE_Type::ACCESS_ALLOWED_ACE_TYPE ||
                         p_ace_header->type == ACE_Type::ACCESS_DENIED_ACE_TYPE)
                     {
-                        uint32_t *mask_ptr = reinterpret_cast<uint32_t *>(
-                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header));
-                        ace_obj->setValue("access_mask", static_cast<int>(*mask_ptr));
+                        if (p_ace_header->size >= sizeof(ACE_Header) + sizeof(uint32_t) + 8)
+                        {
+                            uint32_t *mask_ptr = reinterpret_cast<uint32_t *>(
+                                reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header));
+                            ace_obj->setValue("access_mask", static_cast<int>(*mask_ptr));
 
-                        uint8_t *sid_data{reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t)};
-                        berval sid_berval;
-                        sid_berval.bv_val = reinterpret_cast<char *>(sid_data);
-                        sid_berval.bv_len = p_ace_header->size - sizeof(ACE_Header) - sizeof(uint32_t);
-                        ace_obj->setValue("trustee", parseSid(&sid_berval));
+                            uint8_t *sid_data{reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t)};
+                            berval sid_berval;
+                            sid_berval.bv_val = reinterpret_cast<char *>(sid_data);
+                            sid_berval.bv_len = p_ace_header->size - sizeof(ACE_Header) - sizeof(uint32_t);
+                            ace_obj->setValue("trustee", parseSid(&sid_berval));
+                        }
                     }
                     else if (p_ace_header->type == ACE_Type::ACCESS_ALLOWED_OBJECT_ACE_TYPE ||
                              p_ace_header->type == ACE_Type::ACCESS_DENIED_OBJECT_ACE_TYPE)
                     {
-                        uint32_t *mask_ptr = reinterpret_cast<uint32_t *>(
-                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header));
-                        uint32_t *flags_ptr = reinterpret_cast<uint32_t *>(
-                            reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t));
-
-                        ace_obj->setValue("access_mask", static_cast<int>(*mask_ptr));
-                        ace_obj->setValue("object_flags", static_cast<int>(*flags_ptr));
-
-                        size_t sid_offset{sizeof(ACE_Header) + sizeof(uint32_t) + sizeof(uint32_t)};
-
-                        if (*flags_ptr & 0x1)
+                        if (p_ace_header->size >= sizeof(ACE_Header) + sizeof(uint32_t) + sizeof(uint32_t))
                         {
-                            uint8_t *guid_data{reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset};
+                            uint32_t *mask_ptr = reinterpret_cast<uint32_t *>(
+                                reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header));
+                            uint32_t *flags_ptr = reinterpret_cast<uint32_t *>(
+                                reinterpret_cast<uint8_t *>(p_ace_header) + sizeof(ACE_Header) + sizeof(uint32_t));
 
-                            uint32_t data1{*reinterpret_cast<uint32_t *>(guid_data)};
-                            uint16_t data2{*reinterpret_cast<uint16_t *>(guid_data + 4)};
-                            uint16_t data3{*reinterpret_cast<uint16_t *>(guid_data + 6)};
+                            ace_obj->setValue("access_mask", static_cast<int>(*mask_ptr));
+                            ace_obj->setValue("object_flags", static_cast<int>(*flags_ptr));
 
-                            std::ostringstream guid_oss;
-                            guid_oss << std::hex << std::setfill('0')
-                                     << std::setw(8) << data1 << "-"
-                                     << std::setw(4) << data2 << "-"
-                                     << std::setw(4) << data3 << "-";
+                            size_t sid_offset{sizeof(ACE_Header) + sizeof(uint32_t) + sizeof(uint32_t)};
 
-                            for (int j = 8; j < 10; j++)
-                                guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
+                            if ((*flags_ptr & 0x1) && (sid_offset + 16 <= p_ace_header->size))
+                            {
+                                uint8_t *guid_data{reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset};
 
-                            guid_oss << "-";
+                                uint32_t data1{*reinterpret_cast<uint32_t *>(guid_data)};
+                                uint16_t data2{*reinterpret_cast<uint16_t *>(guid_data + 4)};
+                                uint16_t data3{*reinterpret_cast<uint16_t *>(guid_data + 6)};
 
-                            for (int j = 10; j < 16; j++)
-                                guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
+                                std::ostringstream guid_oss;
+                                guid_oss << std::hex << std::setfill('0')
+                                         << std::setw(8) << data1 << "-"
+                                         << std::setw(4) << data2 << "-"
+                                         << std::setw(4) << data3 << "-";
 
-                            ace_obj->setValue("object_type_guid", guid_oss.str());
-                            sid_offset += 16;
+                                for (int j = 8; j < 10; j++)
+                                    guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
+
+                                guid_oss << "-";
+
+                                for (int j = 10; j < 16; j++)
+                                    guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
+
+                                ace_obj->setValue("object_type_guid", guid_oss.str());
+                                sid_offset += 16;
+                            }
+
+                            if ((*flags_ptr & 0x2) && (sid_offset + 16 <= p_ace_header->size))
+                            {
+                                uint8_t *guid_data = reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset;
+
+                                uint32_t data1{*reinterpret_cast<uint32_t *>(guid_data)};
+                                uint16_t data2{*reinterpret_cast<uint16_t *>(guid_data + 4)};
+                                uint16_t data3{*reinterpret_cast<uint16_t *>(guid_data + 6)};
+
+                                std::ostringstream guid_oss;
+                                guid_oss << std::hex << std::setfill('0')
+                                         << std::setw(8) << data1 << "-"
+                                         << std::setw(4) << data2 << "-"
+                                         << std::setw(4) << data3 << "-";
+
+                                for (int j = 8; j < 10; j++)
+                                    guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
+
+                                guid_oss << "-";
+
+                                for (int j = 10; j < 16; j++)
+                                    guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
+
+                                ace_obj->setValue("inherited_object_type_guid", guid_oss.str());
+                                sid_offset += 16;
+                            }
+
+                            if (sid_offset + 8 <= p_ace_header->size)
+                            {
+                                uint8_t *sid_data{reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset};
+                                berval sid_berval;
+                                sid_berval.bv_val = reinterpret_cast<char *>(sid_data);
+                                sid_berval.bv_len = p_ace_header->size - sid_offset;
+                                ace_obj->setValue("trustee", parseSid(&sid_berval));
+                            }
                         }
-
-                        if (*flags_ptr & 0x2)
-                        {
-                            uint8_t *guid_data = reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset;
-
-                            uint32_t data1{*reinterpret_cast<uint32_t *>(guid_data)};
-                            uint16_t data2{*reinterpret_cast<uint16_t *>(guid_data + 4)};
-                            uint16_t data3{*reinterpret_cast<uint16_t *>(guid_data + 6)};
-
-                            std::ostringstream guid_oss;
-                            guid_oss << std::hex << std::setfill('0')
-                                     << std::setw(8) << data1 << "-"
-                                     << std::setw(4) << data2 << "-"
-                                     << std::setw(4) << data3 << "-";
-
-                            for (int j = 8; j < 10; j++)
-                                guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
-
-                            guid_oss << "-";
-
-                            for (int j = 10; j < 16; j++)
-                                guid_oss << std::setw(2) << static_cast<int>(guid_data[j]);
-
-                            ace_obj->setValue("inherited_object_type_guid", guid_oss.str());
-                            sid_offset += 16;
-                        }
-
-                        uint8_t *sid_data{reinterpret_cast<uint8_t *>(p_ace_header) + sid_offset};
-                        berval sid_berval;
-                        sid_berval.bv_val = reinterpret_cast<char *>(sid_data);
-                        sid_berval.bv_len = p_ace_header->size - sid_offset;
-                        ace_obj->setValue("trustee", parseSid(&sid_berval));
                     }
                     else
                         ace_obj->setValue("raw_data", 1);
 
                     aces.push_back(JSON::Value(JSON::ValueType::OBJECT, std::move(ace_obj)));
 
-                    if (p_ace_header->size == 0)
-                        break;
-
-                    p_ace_header = reinterpret_cast<ACE_Header *>(
-                        reinterpret_cast<uint8_t *>(p_ace_header) + p_ace_header->size);
+                    current_offset += p_ace_header->size;
                 }
 
                 dacl_obj->setValue("aces", aces);

@@ -65,7 +65,7 @@ int main(int argc, char **argv)
     auto password{Arguments::getValue<std::string>(arguments, "-p")};
     auto domain{Arguments::getValue<std::string>(arguments, "-d")};
     auto host{Arguments::getValue<std::string>(arguments, "-h")};
-    auto use_secure{Arguments::getValue<int>(arguments, "-s") != 0};
+    auto use_secure{Arguments::getValue<int>(arguments, "-s").value_or(0) != 0};
 
     int port{};
     auto &port_argument{arguments["-sp"]};
@@ -124,6 +124,7 @@ int main(int argc, char **argv)
     if (return_code != LDAP_SUCCESS)
     {
         std::cerr << "[x] Failed to bind LDAP: " << ldap_err2string(return_code) << std::endl;
+        ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
         return 1;
     }
 
@@ -205,6 +206,7 @@ int main(int argc, char **argv)
         if (search_result_code != LDAP_SUCCESS)
         {
             std::cerr << "[x] Search failed for \"" << entry.first << "\": " << ldap_err2string(search_result_code) << std::endl;
+            ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
             return -1;
         }
 
