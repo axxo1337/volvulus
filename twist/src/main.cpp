@@ -225,7 +225,6 @@ int main(int argc, char **argv)
 
     for (auto &entry : objectSearchMap)
     {
-        LDAPMessage *search_result;
         std::string filter{"(objectClass=" + std::string(entry.second.objectClass) + ")"};
 
         std::vector<JSON::Value> objects_array;
@@ -235,80 +234,142 @@ int main(int argc, char **argv)
             attributes.push_back(attribute.name);
         attributes.push_back(nullptr);
 
-        LDAPControl *sdControl = createSDFlagsControl();
-        LDAPControl *serverControls[] = {sdControl, nullptr};
-        int search_result_code = ldap_search_ext_s(p_ldap, base_dn.c_str(), LDAP_SCOPE_SUBTREE, filter.c_str(), (char **)attributes.data(), 0, serverControls, nullptr, nullptr, 0, &search_result);
-        if (sdControl)
+        struct berval *cookie = nullptr;
+        int page_size = 500;
+
+        do
         {
-            delete[] sdControl->ldctl_value.bv_val;
-            delete sdControl;
-        }
+            LDAPMessage *search_result = nullptr;
+            LDAPControl *sdControl = createSDFlagsControl();
+            LDAPControl *pageControl = nullptr;
+            struct berval null_cookie = {0, nullptr};
+            struct berval *current_cookie = cookie ? cookie : &null_cookie;
 
-        if (search_result_code != LDAP_SUCCESS)
-        {
-            std::cerr << "[x] Search failed for \"" << entry.first << "\": " << ldap_err2string(search_result_code) << std::endl;
-            ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
-            return -1;
-        }
-
-        LDAPMessage *message_entry{ldap_first_entry(p_ldap, search_result)};
-
-        while (message_entry != nullptr)
-        {
-            std::unique_ptr<JSON::Object> sub_json_object{std::make_unique<JSON::Object>()};
-
-            for (const auto &attribute : entry.second.attributes)
+            int rc = ldap_create_page_control(p_ldap, page_size, current_cookie, 0, &pageControl);
+            if (rc != LDAP_SUCCESS)
             {
-                berval **values{ldap_get_values_len(p_ldap, message_entry, attribute.name)};
-
-                if (values == nullptr)
-                    continue;
-
-                switch (attribute.type)
+                std::cerr << "[x] Failed to create page control: " << ldap_err2string(rc) << std::endl;
+                if (sdControl)
                 {
-                case ObjectSearch::AttributeType::STRING:
-                    if (values[0] != nullptr)
-                        sub_json_object->setValue(attribute.name, values[0]->bv_val);
-                    break;
-
-                case ObjectSearch::AttributeType::MULTI_VALUE:
-                {
-                    std::vector<JSON::Value> json_values;
-                    for (int i{}; values[i] != nullptr; i++)
-                        json_values.push_back(JSON::Value(JSON::ValueType::STRING, values[i]->bv_val));
-                    sub_json_object->setValue(attribute.name, json_values);
+                    delete[] sdControl->ldctl_value.bv_val;
+                    delete sdControl;
                 }
-                break;
-
-                case ObjectSearch::AttributeType::FILETIME:
-                    if (values[0] != nullptr)
-                        sub_json_object->setValue(attribute.name, ObjectSearch::parseFiletime(values[0]));
-                    break;
-
-                case ObjectSearch::AttributeType::BINARY_SID:
-                    if (values[0] != nullptr)
-                        sub_json_object->setValue(attribute.name, ObjectSearch::parseSid(values[0]));
-                    break;
-
-                case ObjectSearch::AttributeType::ENUMERATION:
-                    if (values[0] != nullptr)
-                        sub_json_object->setValue(attribute.name, std::stoul(values[0]->bv_val));
-                    break;
-
-                case ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR:
-                    if (values[0] != nullptr)
-                        sub_json_object->setValue(attribute.name, ObjectSearch::parseSecurityDescriptor(values[0]));
-                    break;
-                }
-
-                ldap_value_free_len(values);
+                if (cookie)
+                    ber_bvfree(cookie);
+                ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
+                return -1;
             }
 
-            objects_array.push_back(JSON::Value(JSON::ValueType::OBJECT, std::move(sub_json_object)));
-            message_entry = ldap_next_entry(p_ldap, message_entry);
-        }
+            LDAPControl *serverControls[] = {sdControl, pageControl, nullptr};
+            LDAPControl **returnedControls = nullptr;
 
-        ldap_msgfree(search_result);
+            int search_result_code = ldap_search_ext_s(p_ldap, base_dn.c_str(), LDAP_SCOPE_SUBTREE, filter.c_str(), (char **)attributes.data(), 0, serverControls, nullptr, nullptr, 0, &search_result);
+
+            if (sdControl)
+            {
+                delete[] sdControl->ldctl_value.bv_val;
+                delete sdControl;
+            }
+            if (pageControl)
+            {
+                ldap_control_free(pageControl);
+            }
+
+            if (search_result_code != LDAP_SUCCESS)
+            {
+                std::cerr << "[x] Search failed for \"" << entry.first << "\": " << ldap_err2string(search_result_code) << std::endl;
+                if (cookie)
+                    ber_bvfree(cookie);
+                if (search_result)
+                    ldap_msgfree(search_result);
+                ldap_unbind_ext_s(p_ldap, nullptr, nullptr);
+                return -1;
+            }
+
+            rc = ldap_parse_result(p_ldap, search_result, nullptr, nullptr, nullptr, nullptr, &returnedControls, 0);
+            if (rc == LDAP_SUCCESS && returnedControls != nullptr)
+            {
+                struct berval *new_cookie = nullptr;
+                ldap_parse_page_control(p_ldap, returnedControls, nullptr, &new_cookie);
+
+                if (cookie)
+                {
+                    ber_bvfree(cookie);
+                    cookie = nullptr;
+                }
+
+                if (new_cookie != nullptr && new_cookie->bv_len > 0)
+                {
+                    cookie = ber_dupbv(nullptr, new_cookie);
+                }
+
+                if (new_cookie != nullptr)
+                {
+                    ber_bvfree(new_cookie);
+                }
+                ldap_controls_free(returnedControls);
+            }
+
+            LDAPMessage *message_entry{ldap_first_entry(p_ldap, search_result)};
+
+            while (message_entry != nullptr)
+            {
+                std::unique_ptr<JSON::Object> sub_json_object{std::make_unique<JSON::Object>()};
+
+                for (const auto &attribute : entry.second.attributes)
+                {
+                    berval **values{ldap_get_values_len(p_ldap, message_entry, attribute.name)};
+
+                    if (values == nullptr)
+                        continue;
+
+                    switch (attribute.type)
+                    {
+                    case ObjectSearch::AttributeType::STRING:
+                        if (values[0] != nullptr)
+                            sub_json_object->setValue(attribute.name, values[0]->bv_val);
+                        break;
+
+                    case ObjectSearch::AttributeType::MULTI_VALUE:
+                    {
+                        std::vector<JSON::Value> json_values;
+                        for (int i{}; values[i] != nullptr; i++)
+                            json_values.push_back(JSON::Value(JSON::ValueType::STRING, values[i]->bv_val));
+                        sub_json_object->setValue(attribute.name, json_values);
+                    }
+                    break;
+
+                    case ObjectSearch::AttributeType::FILETIME:
+                        if (values[0] != nullptr)
+                            sub_json_object->setValue(attribute.name, ObjectSearch::parseFiletime(values[0]));
+                        break;
+
+                    case ObjectSearch::AttributeType::BINARY_SID:
+                        if (values[0] != nullptr)
+                            sub_json_object->setValue(attribute.name, ObjectSearch::parseSid(values[0]));
+                        break;
+
+                    case ObjectSearch::AttributeType::ENUMERATION:
+                        if (values[0] != nullptr)
+                            sub_json_object->setValue(attribute.name, std::stoul(values[0]->bv_val));
+                        break;
+
+                    case ObjectSearch::AttributeType::BINARY_SECURITY_DESCRIPTOR:
+                        if (values[0] != nullptr)
+                            sub_json_object->setValue(attribute.name, ObjectSearch::parseSecurityDescriptor(values[0]));
+                        break;
+                    }
+
+                    ldap_value_free_len(values);
+                }
+
+                objects_array.push_back(JSON::Value(JSON::ValueType::OBJECT, std::move(sub_json_object)));
+                message_entry = ldap_next_entry(p_ldap, message_entry);
+            }
+
+            ldap_msgfree(search_result);
+
+        } while (cookie != nullptr);
 
         root_json_object->setValue(entry.first, objects_array);
     }
