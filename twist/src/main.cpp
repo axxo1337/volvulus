@@ -219,6 +219,20 @@ int main(int argc, char **argv)
                 },
             },
         },
+        {
+            "TRUSTS",
+            {
+                "trustedDomain",
+                {
+                    {"cn", ObjectSearch::AttributeType::STRING},
+                    {"distinguishedName", ObjectSearch::AttributeType::STRING},
+                    {"securityIdentifier", ObjectSearch::AttributeType::BINARY_SID},
+                    {"trustDirection", ObjectSearch::AttributeType::ENUMERATION},
+                    {"trustType", ObjectSearch::AttributeType::ENUMERATION},
+                    {"trustAttributes", ObjectSearch::AttributeType::ENUMERATION},
+                },
+            },
+        },
     };
 
     std::unique_ptr<JSON::Object> root_json_object{std::make_unique<JSON::Object>()};
